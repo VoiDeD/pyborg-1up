@@ -14,6 +14,9 @@ COPY . /usr/src/app
 
 RUN pip install poetry && poetry install --no-dev -v -E subtitles -E nlp
 
+# download needed NLTK datasets
+RUN pip install nltk && python -m nltk.downloader popular
+
 EXPOSE 2001
 
 CMD ["poetry", "run", "pyborg", "linein", "--multiplex", "false"]
