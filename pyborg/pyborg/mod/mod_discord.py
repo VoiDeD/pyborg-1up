@@ -4,6 +4,7 @@ pyborg discord module
 import asyncio
 import logging
 import re
+import random
 from functools import partial
 from types import ModuleType
 from typing import Any, Callable, Dict, List, MutableMapping, Optional, Union
@@ -175,7 +176,7 @@ class PyborgDiscord(discord.Client):
                     # TODO: measure time spent here?
                     emoji_map = {x.name: x for x in message.guild.emojis}
                     for word in msg.split():
-                        if word in emoji_map:
+                        if word in emoji_map and random.random() <= 0.05: # 5% chance to replace text with a server emoji
                             e = emoji_map[word]
                             msg = msg.replace(word, "<:{}:{}>".format(e.name, e.id))
                     msg = msg.replace("#nick", str(message.author.mention))
