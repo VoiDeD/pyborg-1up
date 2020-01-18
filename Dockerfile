@@ -15,7 +15,7 @@ COPY . /usr/src/app
 RUN pip install poetry && poetry install --no-dev -v -E subtitles -E nlp
 
 # download needed NLTK datasets
-RUN pip install nltk && python -m nltk.downloader popular
+RUN pip install nltk && python -m nltk.downloader averaged_perceptron_tagger punkt
 
 EXPOSE 2001
 
