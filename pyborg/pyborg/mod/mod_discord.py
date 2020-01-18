@@ -183,6 +183,7 @@ class PyborgDiscord(discord.Client):
                             e = emoji_map[word]
                             msg = msg.replace(word, "<:{}:{}>".format(e.name, e.id))
                     msg = msg.replace("#nick", str(message.author.mention))
+                    msg = msg.replace("# nick", str(message.author.mention))
                     msg = msg.replace("@everyone", "`@everyone`")
                     msg = msg.replace("@here", "`@here`")
                     await message.channel.send(msg)
