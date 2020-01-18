@@ -36,6 +36,7 @@ import sys
 import time
 import uuid
 import zipfile
+import shutil
 from pathlib import Path
 from random import randint
 from typing import Any, Dict
@@ -241,7 +242,7 @@ class PyborgExperimental():
             # this can fail half way...
             json.dump(brain, f)
         # if we didn't crash
-        os.rename(tmp_file, self.brain)
+        shutil.move(tmp_file, self.brain)
         logger.debug("Successful writing of brain & renaming. Quitting.")
 
 
@@ -354,7 +355,7 @@ class pyborg(object):
             # this can fail half way...
             json.dump(brain, f)
         # if we didn't crash
-        os.rename(tmp_file, self.brain_path)
+        shutil.move(tmp_file, self.brain_path)
         logger.debug("Successful writing of brain & renaming. Quitting.")
 
     def save_all(self):
