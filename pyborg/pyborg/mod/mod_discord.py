@@ -183,6 +183,8 @@ class PyborgDiscord(discord.Client):
                     msg = msg.replace("@everyone", "`@everyone`")
                     msg = msg.replace("@here", "`@here`")
                     await message.channel.send(msg)
+                else:
+                    await message.channel.send("I don't know anything about that yet :(")
 
     def _plaintext_name(self, message: discord.Message) -> bool:
         "returns true if should ping with plaintext nickname per-server if configured"
