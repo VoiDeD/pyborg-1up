@@ -15,6 +15,8 @@ from filelock import FileLock
 from pyborg.util.bottle_plugin import BottledPyborg
 from pyborg.util.stats import send_stats
 
+from pyborg.pyborg import pyborg
+
 logger = logging.getLogger(__name__)
 folder = click.get_app_dir("Pyborg")
 SAVE_LOCK = FileLock(Path(folder, ".pyborg_is_saving.lock"))
@@ -33,38 +35,38 @@ def index(pyborg) -> str:
 
 
 @bottle.route("/learn", method="POST")
-def learn(pyborg) -> str:
+def learn(pyborg: pyborg) -> str:
     body = request.POST.getunicode("body")
     pyborg.learn(body)
     return "OK"
 
 
 @bottle.route("/reply", method="POST")
-def reply(pyborg) -> str:
+def reply(pyborg: pyborg) -> str:
     body = request.POST.getunicode("body")
     logger.debug(type(body))
     return pyborg.reply(body)
 
 
 @bottle.route("/save", method="POST")
-def save(pyborg) -> str:
+def save(pyborg: pyborg) -> str:
     with SAVE_LOCK:
         pyborg.save_brain()
         return f"Saved to {pyborg.brain_path}"
 
 
 @bottle.route("/info")
-def info(pyborg) -> tuple:
+def info(pyborg: pyborg) -> tuple:
     return pyborg.ver_string, pyborg.brain_path
 
 
 @bottle.route("/info.json")
-def info2(pyborg) -> Dict:
+def info2(pyborg: pyborg) -> Dict:
     return {"version_string": pyborg.ver_string, "brain": pyborg.brain_path}
 
 
 @bottle.route("/stats", method="POST")
-def stats(pyborg) -> str:
+def stats(pyborg: pyborg) -> str:
     "record stats to statsd"
     send_stats(pyborg)
     return "OK"
@@ -87,7 +89,7 @@ class DumbyIOMod:
 
 
 @bottle.route("/process", method="POST")
-def process(pyborg) -> str:
+def process(pyborg: pyborg) -> str:
     body = request.POST.getunicode("body")
     reply_rate = int(request.POST.get("reply_rate"))
     learning = int(request.POST.get("learning"))
@@ -104,7 +106,7 @@ def process(pyborg) -> str:
 
 
 @bottle.route("/known")
-def known(pyborg) -> str:
+def known(pyborg: pyborg) -> str:
     "return number of contexts"
     word = request.query.word
     try:
@@ -114,19 +116,19 @@ def known(pyborg) -> str:
 
 
 @bottle.route("/words.json")
-def words_json(pyborg) -> Dict:
+def words_json(pyborg: pyborg) -> Dict:
     return {"words": pyborg.settings.num_words,
             "contexts": pyborg.settings.num_contexts,
             "lines": len(pyborg.lines)}
 
 
 @bottle.route("/commands.json")
-def commands_json(pyborg) -> Dict:
+def commands_json(pyborg: pyborg) -> Dict:
     return pyborg.commanddict
 
 
 @bottle.get("/meta/status.json")
-def save_lock_status(pyborg) -> Dict:
+def save_lock_status(pyborg: pyborg) -> Dict:
     return {"status": SAVE_LOCK.is_locked}
 
 
