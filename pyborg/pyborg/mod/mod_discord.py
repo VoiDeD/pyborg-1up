@@ -162,10 +162,13 @@ class PyborgDiscord(discord.Client):
         logger.debug("post nick replace: %s", line)
         line = normalize_awoos(line)
 
-        if self.settings['discord']['learning']:
+        # were we mentioned by an actual user (and not a bot)?
+        was_mentioned = (self.user.mentioned_in(message) or self._plaintext_name(message)) and not message.author.bot
+
+        if self.settings['discord']['learning'] and not was_mentioned:
             await self.learn(line)
 
-        if self.user.mentioned_in(message) or self._plaintext_name(message):
+        if was_mentioned:
             async with message.channel.typing():
                 msg = await self.reply(line)
                 logger.debug("on message: %s", msg)
