@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class PyborgDiscord(discord.Client):
     """This is the pyborg discord client module.
     It connects over http to a running pyborg/http service."""
+
     toml_file: str = attr.ib()  # any old path
     multi_port: int = attr.ib(default=2001)
     multiplexing: bool = attr.ib(default=True)
@@ -42,9 +43,9 @@ class PyborgDiscord(discord.Client):
     def __attrs_post_init__(self) -> None:
         self.settings = toml.load(self.toml_file)
         try:
-            self.multiplexing = self.settings['pyborg']['multiplex']
-            self.multi_server = self.settings['pyborg']['multiplex_server']
-            self.multi_port = self.settings['pyborg']['multiplex_port']
+            self.multiplexing = self.settings["pyborg"]["multiplex"]
+            self.multi_server = self.settings["pyborg"]["multiplex_server"]
+            self.multi_port = self.settings["pyborg"]["multiplex_port"]
         except KeyError:
             logger.info("Missing config key, you get defaults.")
         if not self.multiplexing:
@@ -60,31 +61,31 @@ class PyborgDiscord(discord.Client):
         "launch discord.Client main event loop (calls Client.run)"
 
         self.scan()
-        if 'token' in self.settings['discord']:
-            self.run(self.settings['discord']['token'])
+        if "token" in self.settings["discord"]:
+            self.run(self.settings["discord"]["token"])
         else:
             logger.error("No Token. Set one in your conf file.")
 
     async def fancy_login(self) -> None:
-        if 'token' in self.settings['discord']:
-            await self.login(self.settings['discord']['token'])
+        if "token" in self.settings["discord"]:
+            await self.login(self.settings["discord"]["token"])
         else:
             logger.error("No Token. Set one in your conf file.")
 
     async def on_ready(self) -> None:
-        print('Logged in as')
+        print("Logged in as")
         print(self.user.name)
         print(self.user.id)
-        print('------')
+        print("------")
 
     def clean_msg(self, message: discord.Message) -> str:
-        return ' '.join(message.content.split())
+        return " ".join(message.content.split())
 
     def _extract_emoji(self, msg: str, server_emojis: List[str]) -> str:
         """extract an emoji, returns a str ready to be munged"""
         # s[s.find("<:"):s.find(">")+1] the general idea here
         start = msg.find("<:")
-        attempted_emoji = msg[start + 2: msg.find(":", start + 2)]
+        attempted_emoji = msg[start + 2 : msg.find(":", start + 2)]
         logger.debug("_extract_emoji:attempting to emoji: %s", attempted_emoji)
         if attempted_emoji in server_emojis:
             # now replace the range from start to end with the extracted emoji
@@ -97,7 +98,9 @@ class PyborgDiscord(discord.Client):
         else:
             # this can be a fancy nitro emoji.
             logger.info("_extract_emoji:someone did a fucky wucky")
-            logger.debug("_extract_emoji:OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!")
+            logger.debug(
+                "_extract_emoji:OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!"
+            )
             return msg
 
     async def on_message(self, message: discord.Message) -> None:
@@ -120,12 +123,15 @@ class PyborgDiscord(discord.Client):
                         await message.channel.send(command(msg=message.content))
                     else:
                         await message.channel.send(command())
+
         if message.author == self.user:
             logger.debug("Not learning/responding to self")
             return
 
         if self.save_status_count % 5:
-            async with self.aio_session.get(f"http://{self.multi_server}:{self.multi_port}/meta/status.json", raise_for_status=True) as ret_status:
+            async with self.aio_session.get(
+                f"http://{self.multi_server}:{self.multi_port}/meta/status.json", raise_for_status=True
+            ) as ret_status:
                 data = await ret_status.json()
                 if data["status"]:
                     await self.change_presence(activity=discord.Game("Saving brain..."))
@@ -173,7 +179,7 @@ class PyborgDiscord(discord.Client):
         # were we mentioned by an actual user (and not a bot)?
         was_mentioned = (self.user.mentioned_in(message) or self._plaintext_name(message)) and not message.author.bot
 
-        if self.settings['discord']['learning'] and not was_mentioned:
+        if self.settings["discord"]["learning"] and not was_mentioned:
             await self.learn(line)
 
         if was_mentioned:
@@ -188,7 +194,7 @@ class PyborgDiscord(discord.Client):
                     # TODO: measure time spent here?
                     emoji_map = {x.name: x for x in message.guild.emojis}
                     for word in msg.split():
-                        if word in emoji_map and random.random() <= 0.05: # 5% chance to replace text with a server emoji
+                        if word in emoji_map and random.random() <= 0.05:  # 5% chance to replace text with a server emoji
                             e = emoji_map[word]
                             msg = msg.replace(word, "<:{}:{}>".format(e.name, e.id))
                     msg = msg.replace("#nick", str(message.author.mention))
@@ -211,12 +217,12 @@ class PyborgDiscord(discord.Client):
 
     async def learn(self, body: str) -> None:
         """thin wrapper for learn to switch to multiplex mode"""
-        if self.settings['pyborg']['multiplex']:
+        if self.settings["pyborg"]["multiplex"]:
             await self.aio_session.post(f"http://{self.multi_server}:{self.multi_port}/learn", data={"body": body}, raise_for_status=True)
 
     async def reply(self, body: str) -> Union[str, None]:
         """thin wrapper for reply to switch to multiplex mode: now coroutine"""
-        if self.settings['pyborg']['multiplex']:
+        if self.settings["pyborg"]["multiplex"]:
             url = f"http://{self.multi_server}:{self.multi_port}/reply"
             async with self.aio_session.post(url, data={"body": body}, raise_for_status=True) as ret:
                 reply = await ret.text()
@@ -233,13 +239,16 @@ class PyborgDiscord(discord.Client):
         "look for commands to add to registry"
         self.scanner = venusian.Scanner(registry=self.registry)
         self.scanner.scan(module)
+
+
 #
-#class FancyCallable(Callable):
+# class FancyCallable(Callable):
 #    pass_msg: bool
 
 
-class Registry():
+class Registry:
     """Command registry of decorated pyborg commands"""
+
     def __init__(self, mod: PyborgDiscord) -> None:
         self.registered: Dict[str, Callable] = {}
         self.mod = mod
@@ -251,7 +260,9 @@ class Registry():
         "add command to the registry. takes two config options."
         self.registered[name] = ob
         if internals:
-            self.registered[name] = partial(ob, self.mod.multiplexing, multi_server="http://{}:{}/".format(self.mod.multi_server, self.mod.multi_port))
+            self.registered[name] = partial(
+                ob, self.mod.multiplexing, multi_server="http://{}:{}/".format(self.mod.multi_server, self.mod.multi_port)
+            )
             self.registered[name].pass_msg = False
         if pass_msg:
             self.registered[name].pass_msg = True
