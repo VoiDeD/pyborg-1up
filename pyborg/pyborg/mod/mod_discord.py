@@ -103,6 +103,7 @@ class PyborgDiscord(discord.Client):
     async def on_message(self, message: discord.Message) -> None:
         """message.content  ~= <@221134985560588289> you should play dota"""
         logger.debug(message.content)
+        logger.info("raw message: %s", message.content)
         if message.content and message.content[0] == "!":
             command_name = message.content.split()[0][1:]
             if command_name in ["list", "help"]:
@@ -144,6 +145,8 @@ class PyborgDiscord(discord.Client):
         else:
             incoming_message = message.content
 
+        logger.info("message after emoji: %s", incoming_message)
+
         # Strip nicknames for pyborg
         line_list = list()
         for chunk in incoming_message.split():
@@ -152,12 +155,17 @@ class PyborgDiscord(discord.Client):
             line_list.append(chunk)
 
         line = " ".join(line_list)
+
+        logger.info("message after nicknames: %s", line)
+
         try:
             if self.settings["discord"]["plaintext_ping"]:
                 exp = re.compile(message.guild.me.display_name, re.IGNORECASE)
                 line = exp.sub("#nick", line)
         except KeyError:
             pass
+
+        logger.info("message after nick replace: %s", line)
 
         logger.debug("post nick replace: %s", line)
         line = normalize_awoos(line)
@@ -171,6 +179,7 @@ class PyborgDiscord(discord.Client):
         if was_mentioned:
             async with message.channel.typing():
                 msg = await self.reply(line)
+                logger.info("replying with: %s", msg)
                 logger.debug("on message: %s", msg)
                 if msg:
                     logger.debug("Sending message...")
