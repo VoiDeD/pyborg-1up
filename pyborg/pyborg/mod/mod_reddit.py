@@ -34,6 +34,7 @@ from pyborg.util.hate_filter import SUBREDDIT_HATE_LIST
 
 logger = logging.getLogger(__name__)
 
+
 @attr.s
 class PyborgReddit():
     """Takes a toml config file path"""
@@ -47,7 +48,7 @@ class PyborgReddit():
     auth_app_id: str = attr.ib(init=False)
     auth_script_secret: str = attr.ib(init=False)
     reddit: praw.Reddit = attr.ib(init=False)
-    
+
     def __init__(self, toml_file="reddit.toml"):
         self.toml_file = toml_file
         self.settings = toml.load(toml_file)
