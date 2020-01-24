@@ -55,12 +55,29 @@ logger = logging.getLogger(__name__)
 
 try:
     import nltk
+
     logger.debug("Got nltk!")
+
+    sentence_tokenizer = nltk.tokenize.PunktSentenceTokenizer()
+    word_tokenizer = nltk.tokenize.TweetTokenizer(preserve_case=False)
+    nltk_punctuation = u"^\s`!()\[\]{};:'\".,<>?«»“”‘’"
 except ImportError:
     nltk = None
     logger.debug("No nltk, won't be using advanced part of speech tagging.")
 
+# Minimum words that need to appear to learn a sentence
+min_learn_threshold = 3
+# Minimum amount of blabber required for a response
+sanity_threshold = 3
+# When learning, what the threshold is for gibberish to abort learning
+gibberish_length_threshold = 8
+gibberish_vowel_threshold = 100 / 10
+
 xrange = range
+
+
+def clean_tokens(tokens: List[str]) -> List[str]:
+    return [token for token in tokens if token not in nltk_punctuation]
 
 
 def filter_message(message: str, bot) -> str:
@@ -589,7 +606,10 @@ class pyborg:
             return
 
         # Filter out garbage and do some formatting
-        body = filter_message(body, self)
+        if nltk:
+            body = body.strip()
+        else:
+            body = filter_message(body, self)
 
         # Learn from input
         if learn == 1:
@@ -1001,10 +1021,13 @@ class pyborg:
         Reply to a line of text.
         """
         # split sentences into list of words
-        _words = body.split(" ")
-        words = []
-        for i in _words:
-            words += i.split()
+        if nltk:
+            words = clean_tokens(word_tokenizer.tokenize(body))
+        else:
+            _words = body.split(" ")
+            words = []
+            for i in _words:
+                words += i.split()
 
         if len(words) == 0:
             logger.debug("Did not find any words to reply to.")
@@ -1075,10 +1098,8 @@ class pyborg:
             return (word, comp_weight)
 
         if nltk:
-            # uses punkt
-            tokenized = nltk.tokenize.casual.casual_tokenize(body)
-            # uses averaged_perceptron_tagger
-            tagged = nltk.pos_tag(tokenized)
+            # uses averaged_perceptron_tagger on previously tokenized words
+            tagged = nltk.pos_tag(words)
             logger.info(tagged)
             weighted_choices = list(map(_mappable_nick_clean, tagged))
             population = [val for val, cnt in weighted_choices for i in xrange(cnt)]
@@ -1092,148 +1113,162 @@ class pyborg:
         else:
             word = index[randint(0, len(index) - 1)]
 
-        # Build sentence backwards from "chosen" word
         if self._is_censored(word):
             logger.debug("chosen word: %s***%s is censored. ignoring.", (word[0], word[-1]))
             return None
-        sentence = [word]
-        done = 0
-        while done == 0:
-            # create a dictionary wich will contain all the words we can found before the "chosen" word
-            pre_words = {"": 0}
-            # this is for prevent the case when we have an ignore_listed word
-            word = str(sentence[0].split(" ")[0])
-            for x in xrange(0, len(self.words[word]) - 1):
-                logger.debug(locals())
-                logger.debug('trying to unpack: %s', self.words[word][x])
-                l = self.words[word][x]['hashval']  # noqa: E741
-                w = self.words[word][x]['index']
-                context = self.lines[l][0]
-                num_context = self.lines[l][1]
-                cwords = context.split()
-                # if the word is not the first of the context, look the previous one
-                if cwords[w] != word:
-                    print(context)
-                if w:
-                    # look if we can found a pair with the choosen word, and the previous one
-                    if len(sentence) > 1 and len(cwords) > w + 1:
-                        if sentence[1] != cwords[w + 1]:
+
+        def collect_backwards_chain(sentence):
+            # Build sentence backwards from "chosen" word
+            while True:
+                # create a dictionary wich will contain all the words we can found before the "chosen" word
+                pre_words = {"": 0}
+                # this is for prevent the case when we have an ignore_listed word
+                word = str(sentence[0].split(" ")[0])
+                for word_context in self.words[word]:
+                    logger.debug(locals())
+                    logger.debug('trying to unpack: %s', word_context)
+                    l = word_context['hashval']  # noqa: E741
+                    w = word_context['index']
+                    context = self.lines[l][0]
+                    num_context = self.lines[l][1]
+                    cwords = context.split()
+                    # if the word is not the first of the context, look the previous one
+                    if cwords[w] != word:
+                        print(context)
+                    if w:
+                        # look if we can found a pair with the choosen word, and the previous one
+                        if len(sentence) > 1 and len(cwords) > w + 1:
+                            if sentence[1] != cwords[w + 1]:
+                                continue
+
+                        # if the word is in ignore_list, look the previous word
+                        look_for = cwords[w - 1]
+                        if look_for in self.settings.ignore_list and w > 1:
+                            look_for = cwords[w - 2] + " " + look_for
+
+                        # saves how many times we can found each word
+                        if look_for not in pre_words:
+                            pre_words[look_for] = num_context
+                        else:
+                            pre_words[look_for] += num_context
+
+                    else:
+                        pre_words[""] += num_context
+
+                # Sort the words
+                liste = list(pre_words.items())  # this is a view in py3
+                liste.sort(key=lambda x: x[1])
+                numbers = [liste[0][1]]
+                for x in xrange(1, len(liste)):
+                    numbers.append(liste[x][1] + numbers[x - 1])
+
+                # take one them from the list ( randomly )
+                mot = randint(0, numbers[len(numbers) - 1])
+                chosen_index = 0
+                for x in xrange(0, len(numbers)):
+                    if mot <= numbers[x]:
+                        mot = liste[x][0]
+                        chosen_index = x
+                        break
+
+                # if the word is already choosen, pick the next one
+                while mot in sentence:
+                    chosen_index += 1
+                    if chosen_index >= len(liste) - 1:
+                        mot = ''
+                        logger.info("the choosening: (none)")
+                    else:
+                        mot = liste[chosen_index][0]
+                        logger.info("the choosening: %s", liste[chosen_index])
+
+                # logger.debug("mot1: %s", len(mot))
+                mot = mot.split()
+                mot.reverse()
+                if len(mot) == 0:
+                    return sentence
+                else:
+                    list(map((lambda x: sentence.insert(0, x)), mot))
+
+        def collect_forwards_chain(sentence):
+            # Now build sentence forwards from "chosen" word
+
+            # We've got
+            # cwords:    ... cwords[w-1] cwords[w]   cwords[w+1] cwords[w+2]
+            # sentence:  ... sentence[-2]    sentence[-1]    look_for    look_for ?
+
+            # we are looking, for a cwords[w] known, and maybe a cwords[w-1] known, what will be the cwords[w+1] to choose.
+            # cwords[w+2] is need when cwords[w+1] is in ignored list
+            while True:
+                # create a dictionary wich will contain all the words we can found before the "chosen" word
+                post_words = {"": 0}
+                word = str(sentence[-1].split(" ")[-1])
+                for word_context in self.words[word]:
+                    l = word_context['hashval']  # noqa: E741
+                    w = word_context['index']
+                    context = self.lines[l][0]
+                    num_context = self.lines[l][1]
+                    cwords = context.split()
+                    # look if we can found a pair with the choosen word, and the next one
+                    if len(sentence) > 1:
+                        if sentence[len(sentence) - 2] != cwords[w - 1]:
                             continue
 
-                    # if the word is in ignore_list, look the previous word
-                    look_for = cwords[w - 1]
-                    if look_for in self.settings.ignore_list and w > 1:
-                        look_for = cwords[w - 2] + " " + look_for
+                    if w < len(cwords) - 1:
+                        # if the word is in ignore_list, look the next word
+                        look_for = cwords[w + 1]
+                        if (look_for in self.settings.ignore_list or look_for in self.settings.censored) and w < len(
+                                cwords) - 2:
+                            look_for = look_for + " " + cwords[w + 2]
 
-                    # saves how many times we can found each word
-                    if look_for not in pre_words:
-                        pre_words[look_for] = num_context
+                        if look_for not in post_words:
+                            post_words[look_for] = num_context
+                        else:
+                            post_words[look_for] += num_context
                     else:
-                        pre_words[look_for] += num_context
+                        post_words[""] += num_context
+                # Sort the words
+                liste = list(post_words.items())
+                liste.sort(key=lambda x: x[1])
+                numbers = [liste[0][1]]
 
+                for x in xrange(1, len(liste)):
+                    numbers.append(liste[x][1] + numbers[x - 1])
+
+                # take one them from the list ( randomly )
+                mot = randint(0, numbers[len(numbers) - 1])
+                chosen_index = 0
+                for x in xrange(0, len(numbers)):
+                    if mot <= numbers[x]:
+                        mot = liste[x][0]
+                        chosen_index = x
+                        break
+
+                while mot in sentence:
+                    chosen_index += 1
+                    if chosen_index >= len(liste) - 1:
+                        mot = ''
+                        break
+                    mot = liste[chosen_index][0]
+
+                # logger.debug("mot2: %s", len(mot))
+                mot = mot.split()
+                if len(mot) == 0:
+                    return sentence
                 else:
-                    pre_words[""] += num_context
+                    list(map(lambda x: sentence.append(x), mot))
 
-            # Sort the words
-            liste = list(pre_words.items())  # this is a view in py3
-            liste.sort(key=lambda x: x[1])
-            numbers = [liste[0][1]]
-            for x in xrange(1, len(liste)):
-                numbers.append(liste[x][1] + numbers[x - 1])
+        sentence = [word]
 
-            # take one them from the list ( randomly )
-            mot = randint(0, numbers[len(numbers) - 1])
-            for x in xrange(0, len(numbers)):
-                if mot <= numbers[x]:
-                    mot = liste[x][0]
-                    break
-
-            # if the word is already choosen, pick the next one
-            while mot in sentence:
-                x += 1
-                if x >= len(liste) - 1:
-                    mot = ''
-                logger.info("the choosening: %s", liste[x])
-                mot = liste[x][0]
-
-            # logger.debug("mot1: %s", len(mot))
-            mot = mot.split()
-            mot.reverse()
-            if mot == []:
-                done = 1
-            else:
-                list(map((lambda x: sentence.insert(0, x)), mot))
-
-        pre_words = sentence
+        pre_words = collect_backwards_chain(sentence)
         sentence = sentence[-2:]
 
-        # Now build sentence forwards from "chosen" word
-
-        # We've got
-        # cwords:    ... cwords[w-1] cwords[w]   cwords[w+1] cwords[w+2]
-        # sentence:  ... sentence[-2]    sentence[-1]    look_for    look_for ?
-
-        # we are looking, for a cwords[w] known, and maybe a cwords[w-1] known, what will be the cwords[w+1] to choose.
-        # cwords[w+2] is need when cwords[w+1] is in ignored list
-        done = 0
-        while done == 0:
-            # create a dictionary wich will contain all the words we can found before the "chosen" word
-            post_words = {"": 0}
-            word = str(sentence[-1].split(" ")[-1])
-            for x in xrange(0, len(self.words[word])):
-                l = self.words[word][x]['hashval']  # noqa: E741
-                w = self.words[word][x]['index']
-                context = self.lines[l][0]
-                num_context = self.lines[l][1]
-                cwords = context.split()
-                # look if we can found a pair with the choosen word, and the next one
-                if len(sentence) > 1:
-                    if sentence[len(sentence) - 2] != cwords[w - 1]:
-                        continue
-
-                if w < len(cwords) - 1:
-                    # if the word is in ignore_list, look the next word
-                    look_for = cwords[w + 1]
-                    if (look_for in self.settings.ignore_list or look_for in self.settings.censored) and w < len(cwords) - 2:
-                        look_for = look_for + " " + cwords[w + 2]
-
-                    if look_for not in post_words:
-                        post_words[look_for] = num_context
-                    else:
-                        post_words[look_for] += num_context
-                else:
-                    post_words[""] += num_context
-            # Sort the words
-            liste = list(post_words.items())
-            liste.sort(key=lambda x: x[1])
-            numbers = [liste[0][1]]
-
-            for x in xrange(1, len(liste)):
-                numbers.append(liste[x][1] + numbers[x - 1])
-
-            # take one them from the list ( randomly )
-            mot = randint(0, numbers[len(numbers) - 1])
-            for x in xrange(0, len(numbers)):
-                if mot <= numbers[x]:
-                    mot = liste[x][0]
-                    break
-
-            x = -1
-            while mot in sentence:
-                x += 1
-                if x >= len(liste) - 1:
-                    mot = ''
-                    break
-                mot = liste[x][0]
-
-            # logger.debug("mot2: %s", len(mot))
-            mot = mot.split()
-            if mot == []:
-                done = 1
-            else:
-                list(map(lambda x: sentence.append(x), mot))
+        sentence = collect_forwards_chain(sentence)
         sentence = pre_words[:-2] + sentence
         # this seems bogus? how does this work???
+
+        # If we couldn't come up with something witty, abort
+        if len(sentence) < sanity_threshold:
+            sentence = []
 
         # Replace aliases
         for x in xrange(0, len(sentence)):
@@ -1273,11 +1308,11 @@ class pyborg:
             """
             logger.debug("entering learn_line")
             if nltk:
-                words = nltk.word_tokenize(body)
+                words = clean_tokens(word_tokenizer.tokenize(body))
             else:
                 words = body.split()
             # Ignore sentences of < 1 words XXX was <3
-            if len(words) < 1:
+            if len(words) < min_learn_threshold:
                 return
 
             # voyelles = "aÃ Ã¢eÃ©Ã¨ÃªiÃ®Ã¯oÃ¶Ã´uÃ¼Ã»y"
@@ -1300,8 +1335,10 @@ class pyborg:
                     if re.search(censored, words[x]):
                         logger.debug("word: %s***%s is censored. escaping.", words[x][0], words[x][-1])
                         return
+
                 if len(words[x]) > 13 \
-                        or (((nb_voy * 100) / len(words[x]) < 26) and len(words[x]) > 5) \
+                        or (((nb_voy * 100) / len(words[x]) < gibberish_vowel_threshold) and
+                            len(words[x]) > gibberish_length_threshold) \
                         or (char and digit) \
                         or (words[x] in self.words) == 0 and self.settings.learning == 0:
                     # if one word as more than 13 characters, don't learn
@@ -1356,5 +1393,9 @@ class pyborg:
         body += " "
         logger.debug("reply:replying to %s", body)
         # map ( (lambda x : learn_line(self, x, num_context)), body.split(". "))
-        for part in body.split('. '):
+        if nltk:
+            sentences = sentence_tokenizer.sentences_from_text(body)
+        else:
+            sentences = body.split('. ')
+        for part in sentences:
             learn_line(part, num_context)
