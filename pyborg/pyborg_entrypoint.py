@@ -10,6 +10,7 @@ import platform
 import shutil
 import struct
 import sys
+from pathlib import Path
 from typing import Callable, Union
 
 import click
@@ -33,6 +34,7 @@ from pyborg.mod.mod_reddit import PyborgReddit
 from pyborg.mod.mod_tumblr import PyborgTumblr
 from pyborg.mod.mod_twitter import PyborgTwitter
 from pyborg.util.bottle_plugin import BottledPyborg
+from pyborg.util.config_defaults import configs as STOCK_CONFIGS
 from pyborg.util.util_cli import init_systemd, mk_folder, networkx_demo
 
 try:
@@ -122,7 +124,8 @@ def dump_httpd_info() -> None:
 def yeet_systemd() -> None:
     "put systemd unit files in current directory"
     print("generated systemd files are here in this directory. Copy them into systemd (try /usr/lib/systemd/system/) with any adjustments")
-    print("then run `systemctl reload-daemon`")
+    print("for pyborg's http server:\n\tsudo install ./pyborg_http.service /usr/lib/systemd/system/")
+    print("then run: \n\tsudo systemctl reload-daemon")
     init_systemd()
 
 
@@ -236,6 +239,12 @@ def info_discord_server(server_id_partial: str) -> None:
 def brain() -> None:
     "Pyborg brain (pybrain.json) utils"
     pass  # pylint: disable=W0107
+
+@brain.command("ls")
+@click.pass_context
+def ls_brains(ctx) -> None:
+    "shortcut for list"
+    ctx.invoke(list_brains)
 
 
 @brain.command("list")
@@ -390,8 +399,13 @@ def run_mastodon(conf_file: str, secret_folder: str) -> None:
     except Exception:
         bot.teardown()
         raise
-
-
+@cli_base.command()
+def yeet_config():
+    for filename, settings in STOCK_CONFIGS:
+        with open(Path(folder, filename)) as fd:
+            toml.dump(fd, settings)
+    print(f"put the files in {folder}")
+            
 @cli_base.group(invoke_without_command=True)
 @click.pass_context
 @click.option("--base-url", default="https://botsin.space/")
