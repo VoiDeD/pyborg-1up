@@ -59,8 +59,8 @@ try:
     logger.debug("Got nltk!")
 
     sentence_tokenizer = nltk.tokenize.PunktSentenceTokenizer()
-    word_tokenizer = nltk.tokenize.TweetTokenizer(preserve_case=False)
-    nltk_punctuation = u"^\s`!()\[\]{};:'\".,<>?«»“”‘’"
+    word_tokenizer = nltk.tokenize.TweetTokenizer(preserve_case=True)
+    nltk_punctuation = u"^\s`!()\[\]{};:'\".,<>?«»“”‘’/"
 except ImportError:
     nltk = None
     logger.debug("No nltk, won't be using advanced part of speech tagging.")
@@ -1163,10 +1163,11 @@ class pyborg:
                     numbers.append(liste[x][1] + numbers[x - 1])
 
                 # take one them from the list ( randomly )
-                mot = randint(0, numbers[len(numbers) - 1])
+                roll = randint(0, numbers[len(numbers) - 1])
+                mot = ''
                 chosen_index = 0
                 for x in xrange(0, len(numbers)):
-                    if mot <= numbers[x]:
+                    if roll <= numbers[x]:
                         mot = liste[x][0]
                         chosen_index = x
                         break
@@ -1176,10 +1177,9 @@ class pyborg:
                     chosen_index += 1
                     if chosen_index >= len(liste) - 1:
                         mot = ''
-                        logger.info("the choosening: (none)")
-                    else:
-                        mot = liste[chosen_index][0]
-                        logger.info("the choosening: %s", liste[chosen_index])
+                        break
+                    mot = liste[chosen_index][0]
+                    logger.info("the choosening: %s", liste[chosen_index])
 
                 # logger.debug("mot1: %s", len(mot))
                 mot = mot.split()
@@ -1235,10 +1235,11 @@ class pyborg:
                     numbers.append(liste[x][1] + numbers[x - 1])
 
                 # take one them from the list ( randomly )
-                mot = randint(0, numbers[len(numbers) - 1])
+                roll = randint(0, numbers[len(numbers) - 1])
+                mot = ''
                 chosen_index = 0
                 for x in xrange(0, len(numbers)):
-                    if mot <= numbers[x]:
+                    if roll <= numbers[x]:
                         mot = liste[x][0]
                         chosen_index = x
                         break
