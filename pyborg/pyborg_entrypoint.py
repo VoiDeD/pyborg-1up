@@ -128,6 +128,24 @@ def yeet_systemd() -> None:
     print("then run: \n\tsudo systemctl reload-daemon")
     init_systemd()
 
+@utils.command("relearn")
+@click.option("--current_brain", default="current")
+@click.option("--import_brain")
+def relearn_brain(current_brain: str, import_brain: str) -> None:
+    "import sentences from another brain file and relearn"
+
+    current_path = resolve_brain(current_brain)
+    import_path = resolve_brain(import_brain)
+
+    # load up the current brain
+    pyborg_instance = pyborg.pyborg.pyborg(current_path)
+
+    lines, words = pyborg.pyborg.pyborg.load_brain_json(import_path)
+    for hash, data in words.items():
+        pyborg_instance.learn(data[0])
+        
+    pyborg_instance.save_brain()
+
 
 # Discord utils
 
