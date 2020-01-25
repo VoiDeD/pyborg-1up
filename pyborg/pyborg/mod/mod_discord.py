@@ -105,8 +105,14 @@ class PyborgDiscord(discord.Client):
 
     async def on_message(self, message: discord.Message) -> None:
         """message.content  ~= <@221134985560588289> you should play dota"""
-        logger.debug(message.content)
+
+        if message.type != discord.MessageType.default:
+            # ignore non-chat messages
+            return
+
         logger.info("raw message: %s", message.content)
+        logger.info("clean message: %s", message.clean_content)
+
         if message.content and message.content[0] == "!":
             command_name = message.content.split()[0][1:]
             if command_name in ["list", "help"]:
