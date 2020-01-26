@@ -39,13 +39,15 @@ class PyborgDiscord(discord.Client):
     scanner: venusian.Scanner = attr.ib(default=None)
     loop: Optional[asyncio.BaseEventLoop] = attr.ib(default=None)
     settings: MutableMapping[str, Any] = attr.ib(default=None)
+    prefix: str = atrr.ib(default="!")
 
     def __attrs_post_init__(self) -> None:
         self.settings = toml.load(self.toml_file)
         try:
-            self.multiplexing = self.settings["pyborg"]["multiplex"]
-            self.multi_server = self.settings["pyborg"]["multiplex_server"]
-            self.multi_port = self.settings["pyborg"]["multiplex_port"]
+            self.prefix = self.settings['discord']['prefix']
+            self.multiplexing = self.settings['pyborg']['multiplex']
+            self.multi_server = self.settings['pyborg']['multiplex_server']
+            self.multi_port = self.settings['pyborg']['multiplex_port']
         except KeyError:
             logger.info("Missing config key, you get defaults.")
         if not self.multiplexing:
@@ -144,13 +146,13 @@ class PyborgDiscord(discord.Client):
             return
 
         # handle commands first
-        if message.content[0] == "!":
+        if message.content[0] == self.prefix:
             command_name = message.content.split()[0][1:]
 
             if command_name in ["list", "help"]:
                 help_text = "I have a bunch of commands:"
-                for k, _ in self.registry.registered.items():
-                    help_text += " !{}".format(k)
+                for k, v in self.registry.registered.items():
+                    help_text += f" {self.prefix}{k}"
                 await message.channel.send(help_text)
 
             else:
