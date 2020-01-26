@@ -78,30 +78,51 @@ class PyborgDiscord(discord.Client):
         print(self.user.id)
         print("------")
 
-    def clean_msg(self, message: discord.Message) -> str:
-        return " ".join(message.content.split())
+    def clean_msg(self, contents: str, message: discord.Message) -> str:
+        """cleans up an incoming message to be processed by pyborg"""
+        # first fix up any nickname flagged mentions, as fixed versions are needed for `_replace_mentions`
+        incoming_message = self._fix_mentions(contents)
+        # replace all emojis with their text versions
+        incoming_message = self._replace_emojis(incoming_message, message)
+        # and all mentions with text versions
+        incoming_message = self._replace_mentions(incoming_message, message)
+        # normalize awoos
+        incoming_message = normalize_awoos(incoming_message)
 
-    def _extract_emoji(self, msg: str, server_emojis: List[str]) -> str:
-        """extract an emoji, returns a str ready to be munged"""
-        # s[s.find("<:"):s.find(">")+1] the general idea here
-        start = msg.find("<:")
-        attempted_emoji = msg[start + 2 : msg.find(":", start + 2)]
-        logger.debug("_extract_emoji:attempting to emoji: %s", attempted_emoji)
-        if attempted_emoji in server_emojis:
-            # now replace the range from start to end with the extracted emoji
-            end = msg.find(">", start) + 1
-            before, _, after = msg.partition(msg[start:end])
-            logger.debug(_)
-            incoming_message = before + attempted_emoji + after
-            logger.debug(incoming_message)
-            return incoming_message
-        else:
-            # this can be a fancy nitro emoji.
-            logger.info("_extract_emoji:someone did a fucky wucky")
-            logger.debug(
-                "_extract_emoji:OOPSIE WOOPSIE!! Uwu We made a fucky wucky!! A wittle fucko boingo! The code monkeys at our headquarters are working VEWY HAWD to fix this!"
-            )
-            return msg
+        return incoming_message
+
+    def _replace_emojis(self, content: str, message: discord.Message) -> str:
+        """replaces all emojis within an incoming discord message and returns the cleaned up message contents"""
+
+        def _extract_emoji(emoji_name: str) -> str:
+            return emoji_name
+
+        return re.sub(r"<:(?P<emoji>\w+):\d+>", lambda x: _extract_emoji(x.group("emoji")), content)
+
+    def _replace_mentions(self, content: str, message: discord.Message) -> str:
+        """replaces all mentions within an incoming discord message and returns the cleaned up message contents"""
+
+        def _extract_member_name(user_id: str) -> str:
+            try:
+                int_id = int(user_id)
+            except ValueError:
+                logger.error("Discord user_id wasn't an integer!")
+                return user_id
+            
+            member: Optional[discord.Member] = message.guild.get_member(int_id)
+
+            if member is not None:
+                return member.display_name
+
+            # if we couldn't find the member in the guild... shit's fucked
+            logger.error("Unable to find guild member with user_id: %s", user_id)
+            return user_id
+
+        return re.sub(r"<@(?P<userid>\d+)>", lambda x: _extract_member_name(x.group("userid")), content)
+
+    def _fix_mentions(self, content: str) -> str:
+        """replaces discord's nickname flagged mentions (ex: <@!123>) with regular mentions (ex: <@123>)"""
+        return re.sub(r"<@!(\d+)>", lambda x: f"<@{x.group(1)}>", content)
 
     async def on_message(self, message: discord.Message) -> None:
         """message.content  ~= <@221134985560588289> you should play dota"""
@@ -110,16 +131,28 @@ class PyborgDiscord(discord.Client):
             # ignore non-chat messages
             return
 
-        logger.info("raw message: %s", message.content)
-        logger.info("clean message: %s", message.clean_content)
+        if message.author.bot:
+            # ignore messages from bots
+            return
 
-        if message.content and message.content[0] == "!":
+        if message.author == self.user:
+            # ignore messages from ourselves - likely covered in the bot case but whatever
+            return
+        
+        if not message.content:
+            # if we somehow don't have any message content, we can't do anything
+            return
+
+        # handle commands first
+        if message.content[0] == "!":
             command_name = message.content.split()[0][1:]
+
             if command_name in ["list", "help"]:
                 help_text = "I have a bunch of commands:"
                 for k, _ in self.registry.registered.items():
                     help_text += " !{}".format(k)
                 await message.channel.send(help_text)
+
             else:
                 if command_name in self.registry.registered:
                     command = self.registry.registered[command_name]
@@ -129,12 +162,11 @@ class PyborgDiscord(discord.Client):
                         await message.channel.send(command(msg=message.content))
                     else:
                         await message.channel.send(command())
-
-        if message.author == self.user:
-            logger.debug("Not learning/responding to self")
             return
 
-        if self.save_status_count % 5:
+        logger.info("raw message: %s", message.content)
+
+        if self.save_status_count % 5 == 0:
             async with self.aio_session.get(
                 f"http://{self.multi_server}:{self.multi_port}/meta/status.json", raise_for_status=True
             ) as ret_status:
@@ -146,72 +178,59 @@ class PyborgDiscord(discord.Client):
 
         self.save_status_count += 1
 
-        # Custom Emoji handling here
-        # DEBUG:pyborg.mod.mod_discord:<:weedminion:392111795642433556>
-        # is this cached? is this fast? who the fuck knows
-        if "<:" in message.content:
-            emojis_possible = message.guild.emojis
-            server_emojis = [x.name for x in emojis_possible]
-            logger.debug("got server emojis as: %s", str(server_emojis))
-            incoming_message = self._extract_emoji(message.content, server_emojis)
-        else:
-            incoming_message = message.content
-
-        logger.info("message after emoji: %s", incoming_message)
-
-        # Strip nicknames for pyborg
-        line_list = list()
-        for chunk in incoming_message.split():
-            if chunk.startswith("<@!"):
-                chunk = "#nick"
-            line_list.append(chunk)
-
-        line = " ".join(line_list)
-
-        logger.info("message after nicknames: %s", line)
-
-        try:
-            if self.settings["discord"]["plaintext_ping"]:
-                exp = re.compile(message.guild.me.display_name, re.IGNORECASE)
-                line = exp.sub("#nick", line)
-        except KeyError:
-            pass
-
-        logger.info("message after nick replace: %s", line)
-
-        logger.debug("post nick replace: %s", line)
-        line = normalize_awoos(line)
-
         # were we mentioned by an actual user (and not a bot)?
-        was_mentioned = (self.user.mentioned_in(message) or self._plaintext_name(message)) and not message.author.bot
+        was_mentioned = self.user.mentioned_in(message) or self._plaintext_mentioned(message)
 
         if self.settings["discord"]["learning"] and not was_mentioned:
-            await self.learn(line)
+            # learn any text that didn't mention us, since we won't be replying
+            incoming_message = self.clean_msg(message.content, message)
+            logger.info("learning: %s", incoming_message)
+
+            await self.learn(incoming_message)
 
         if was_mentioned:
+            # we were mentioned, so lets see if we should reply
+            content = self._fix_mentions(message.content)
+            split_content = content.split()
+            my_name = self.user.display_name
+
+            # if we were mentioned as the first word of the message, we need to strip the mention so we don't reply to that word
+            if split_content[0] == self.user.mention:
+                # we were discord mentioned, so simply strip that word
+                content = " ".join(split_content[1:])
+            elif content.lower().startswith(my_name.lower()):
+                # we were plaintext mentioned, so strip that plaintext off the content
+                content = content[len(my_name) + 1:]
+
+            if not content:
+                # we stripped off the first word mentions, and if now there is no remaining message content we don't want to do anything
+                return
+
+            incoming_message = self.clean_msg(content, message)
+            logger.info("input message: %s", incoming_message)
+                
             async with message.channel.typing():
-                msg = await self.reply(line)
+                # retrieve reply from pyborg
+                msg = await self.reply(incoming_message)
                 logger.info("replying with: %s", msg)
-                logger.debug("on message: %s", msg)
+
                 if msg:
-                    logger.debug("Sending message...")
-                    # if custom emoji: replace to <:weedminion:392111795642433556>
-                    # message.server map to full custom emoji
-                    # TODO: measure time spent here?
+                    # go through every word in the reply and see if we can randomly replace it with a matching emoji
                     emoji_map = {x.name: x for x in message.guild.emojis}
                     for word in msg.split():
                         if word in emoji_map and random.random() <= 0.05:  # 5% chance to replace text with a server emoji
                             e = emoji_map[word]
                             msg = msg.replace(word, "<:{}:{}>".format(e.name, e.id))
-                    msg = msg.replace("#nick", str(message.author.mention))
-                    msg = msg.replace("# nick", str(message.author.mention))
+
+                    # make sure we don't annoy people
                     msg = msg.replace("@everyone", "`@everyone`")
                     msg = msg.replace("@here", "`@here`")
+
                     await message.channel.send(msg)
                 else:
                     await message.channel.send("I don't know anything about that yet :(")
 
-    def _plaintext_name(self, message: discord.Message) -> bool:
+    def _plaintext_mentioned(self, message: discord.Message) -> bool:
         "returns true if should ping with plaintext nickname per-server if configured"
         try:
             if self.settings["discord"]["plaintext_ping"]:
