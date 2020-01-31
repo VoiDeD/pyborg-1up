@@ -68,7 +68,9 @@ except ImportError:
 # Minimum words that need to appear to learn a sentence
 min_learn_threshold = 3
 # Minimum amount of blabber required for a response
-sanity_threshold = 3
+sanity_desired_backwards = 2  # Threshold to meet before advancing to post chain
+sanity_desired_total = 5  # Threshold to meet with the complete chain
+sanity_threshold_chain_attempts = 5  # How many attempts to make to chain words
 # When learning, what the threshold is for gibberish to abort learning
 gibberish_length_threshold = 8
 gibberish_vowel_threshold = 100 / 10
@@ -1117,7 +1119,7 @@ class pyborg:
             logger.debug("chosen word: %s***%s is censored. ignoring.", (word[0], word[-1]))
             return None
 
-        def collect_backwards_chain(sentence):
+        def collect_backwards_chain(sentence, dead_ends):
             # Build sentence backwards from "chosen" word
             while True:
                 # create a dictionary wich will contain all the words we can found before the "chosen" word
@@ -1146,6 +1148,11 @@ class pyborg:
                         if look_for in self.settings.ignore_list and w > 1:
                             look_for = cwords[w - 2] + " " + look_for
 
+                        # Check if this was one of the dead ends
+                        for dead_end in dead_ends:
+                            if len(dead_end) == 1 and dead_end[0] == look_for:
+                                continue
+
                         # saves how many times we can found each word
                         if look_for not in pre_words:
                             pre_words[look_for] = num_context
@@ -1154,6 +1161,10 @@ class pyborg:
 
                     else:
                         pre_words[""] += num_context
+
+                # If we haven't met our blabber threshold, we must roll for a word
+                if len(pre_words) > 1 and len(sentence) < sanity_desired_backwards:
+                    del pre_words[""]
 
                 # Sort the words
                 liste = list(pre_words.items())  # this is a view in py3
@@ -1187,6 +1198,9 @@ class pyborg:
                 if len(mot) == 0:
                     return sentence
                 else:
+                    # Once we've made our choice, filter dead ends to our choice
+                    dead_ends = [chain[1:] for chain in dead_ends if chain[0] == mot]
+
                     list(map((lambda x: sentence.insert(0, x)), mot))
 
         def collect_forwards_chain(sentence):
@@ -1226,6 +1240,11 @@ class pyborg:
                             post_words[look_for] += num_context
                     else:
                         post_words[""] += num_context
+
+                # If we haven't met our blabber threshold, we must roll for a word
+                if len(post_words) > 1 and len(sentence) < sanity_desired_total:
+                    del post_words[""]
+
                 # Sort the words
                 liste = list(post_words.items())
                 liste.sort(key=lambda x: x[1])
@@ -1258,18 +1277,25 @@ class pyborg:
                 else:
                     list(map(lambda x: sentence.append(x), mot))
 
-        sentence = [word]
+        # Attempt to build some chains
+        sentence = []
+        backwards_dead_ends = []
 
-        pre_words = collect_backwards_chain(sentence)
-        sentence = sentence[-2:]
+        for x in range(0, sanity_threshold_chain_attempts):
+            sentence = [word]
 
-        sentence = collect_forwards_chain(sentence)
-        sentence = pre_words[:-2] + sentence
-        # this seems bogus? how does this work???
+            pre_words = collect_backwards_chain(sentence, backwards_dead_ends)
+            sentence = sentence[-2:]
 
-        # If we couldn't come up with something witty, abort
-        if len(sentence) < sanity_threshold:
-            sentence = []
+            sentence = collect_forwards_chain(sentence)
+            sentence = pre_words[:-2] + sentence
+
+            if len(sentence) >= sanity_desired_total:
+                break
+            else:
+                # If we didn't make anything, try again from a different backwards chain
+                backwards_dead_ends.append(pre_words[:-1])
+
 
         # Replace aliases
         for x in xrange(0, len(sentence)):
